@@ -34,9 +34,17 @@
 
   (PUT "/" [name]
        (generate-response {:hello name}))
+     
+  (OPTIONS "/compile" {:keys [headers]}
+    {:status 200
+            :headers {"Access-Control-Allow-Origin" (get headers "origin")
+                      "Access-Control-Allow-Methods" "POST"
+                      "Access-Control-Allow-Headers" "Content-Type"}})
 
-  (POST "/compile" [expr]
-        (generate-js-response (cljs/compilation expr :simple false)))
+  (POST "/compile" {:keys [params headers]}
+    (assoc-in (generate-js-response (cljs/compilation (:expr params) :simple false))
+              [:headers "Access-Control-Allow-Origin"]
+              (get headers "origin")))
 
   (POST "/ast" [expr]
         (generate-ast-response (cljs/analyze expr :simple true)))
@@ -54,7 +62,10 @@
     (if-let [body (and (clj-request? req) (:body req))]
       (let [bstr (slurp body)
             clj-params (binding [*read-eval* false]
-                         (reader/read-string {:read-cond :allow :features #{:cljs}} bstr))
+                         (try
+                                  (reader/read-string {:read-cond :allow :features #{:cljs}} bstr)
+                                  (catch Exception e
+                                    `{:expr (throw (js/Error. ~(str e)))})))
             req* (assoc req
                    :clj-params clj-params
                    :params (merge (:params req) clj-params))]
